@@ -1,0 +1,8 @@
+name = "sales-dashboard"
+main = "src/index.js"
+compatibility_date = "2024-09-25"
+
+[[kv_namespaces]]
+binding = "DATA_STORE"
+id = "16199e7ee8eb4b95a0d598bea28bd247"
+preview_id = "d55c9039f3a9459c84235ebb2e81af11"

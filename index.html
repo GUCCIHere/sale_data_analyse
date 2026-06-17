@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>分公司经营数据看板</title>
+    <style>
+        *{box-sizing: border-box; margin:0; padding:0; font-family:"微软雅黑"}
+        body{padding:20px; background:#f5f7fa}
+        .top-bar{background:#004085; color:#fff; padding:16px; border-radius:6px; margin-bottom:20px}
+        .query-area{background:#fff; padding:16px; border-radius:6px; margin-bottom:20px; box-shadow:0 1px 3px #ddd}
+        .query-area > div{display:inline-block; margin-right:20px; line-height:36px}
+        select,input{padding:6px 10px; font-size:14px; width:220px}
+        button{padding:7px 22px; background:#007bff; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:14px}
+        button:hover{background:#0056b3}
+        .block{background:#fff; padding:18px; border-radius:6px; margin-bottom:24px; box-shadow:0 1px 4px #e0e0e0}
+        .block h3{margin-bottom:14px; color:#003366; border-left:4px solid #007bff; padding-left:10px}
+        table{width:100%; border-collapse:collapse; font-size:13px}
+        th,td{border:1px solid #dee2e6; padding:8px 6px; text-align:center}
+        th{background:#00509e; color:#fff}
+        tr:nth-child(even){background:#f2f7ff}
+        .total-row{background:#ffedb7; font-weight:bold}
+        .loading{color:#666; font-size:16px; padding:30px; text-align:center}
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <h2>分公司经营数据智能看板（按月/累计同比）</h2>
+    </div>
+
+    <div class="query-area">
+        <div>
+            <label>选择分公司：</label>
+            <select id="branchSel"></select>
+        </div>
+        <div>
+            <label>统计年份：</label>
+            <input type="number" id="yearInp" value="2026" min="2010" max="2030">
+        </div>
+        <div>
+            <label>统计月份：</label>
+            <input type="number" id="monthInp" value="5" min="1" max="12">
+        </div>
+        <div style="margin-left:30px">
+            <button id="searchBtn">查询数据</button>
+        </div>
+    </div>
+
+    <div id="resultBox"></div>
+
+    <script>
+        const branchSel = document.getElementById("branchSel");
+        const yearInp = document.getElementById("yearInp");
+        const monthInp = document.getElementById("monthInp");
+        const searchBtn = document.getElementById("searchBtn");
+        const resultBox = document.getElementById("resultBox");
+
+        // 页面加载获取分公司下拉
+        window.onload = async ()=>{
+            const res = await fetch("/get_branch_list");
+            const data = await res.json();
+            data.branches.forEach(b=>{
+                const opt = document.createElement("option");
+                opt.value = b;
+                opt.innerText = b;
+                branchSel.appendChild(opt);
+            })
+        }
+
+        // 查询按钮
+        searchBtn.onclick = async ()=>{
+            const branch = branchSel.value;
+            const year = yearInp.value;
+            const month = monthInp.value;
+            resultBox.innerHTML = "<div class='loading'>正在读取Excel并计算数据，请稍候...</div>";
+
+            const resp = await fetch("/query_data", {
+                method:"POST",
+                headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({branch,year,month})
+            })
+            const json = await resp.json();
+            renderAll(json);
+        }
+
+        // 渲染全部板块
+        function renderAll(d){
+            const b = d.target_branch;
+            const y = d.year;
+            const m = d.month;
+            const ly = y-1;
+
+            let html = `
+                <div class="block">
+                    <h3>一、单月环比分析（${y}年${m}月 vs ${m==1?(y-1)+"年12月":y+"年"+(m-1)+"月"}）</h3>
+                    ${buildTable(d.mom_table, "单月环比")}
+                </div>
+
+                <div class="block">
+                    <h3>二、累计同比分析（${y}年1~${m}月累计 vs ${ly}年1~${m}月累计）</h3>
+                    ${buildTable(d.yoy_table, "累计同比")}
+                </div>
+
+                <div class="block">
+                    <h3>三、吨均效益指标 - 单月环比</h3>
+                    ${buildTonTable(d.ton_mom_curr, d.ton_mom_last, "单月吨均")}
+                </div>
+
+                <div class="block">
+                    <h3>四、吨均效益指标 - 累计同比</h3>
+                    ${buildTonTable(d.ton_yoy_curr, d.ton_yoy_last, "累计吨均")}
+                </div>
+            `;
+            resultBox.innerHTML = html;
+        }
+
+        // 构建核心指标表格（销量/收入/毛利/费用/税前利润）
+        function buildTable(list, type){
+            if(!list || list.length===0) return "<p>无数据</p>";
+            const first = list[0];
+            const keys = Object.keys(first);
+            let thead = "<tr>";
+            keys.forEach(k=>thead += `<th>${k}</th>`);
+            thead += "</tr>";
+
+            let tbody = "";
+            list.forEach((row,idx)=>{
+                const isTotal = row["分类"] === "合计";
+                let trClass = isTotal ? "total-row" : "";
+                tbody += `<tr class="${trClass}">`;
+                keys.forEach(k=>tbody += `<td>${row[k]}</td>`);
+                tbody += "</tr>";
+            })
+            return `<table><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+        }
+
+        // 构建吨均表格
+        function buildTonTable(currList, lastList, title){
+            if(!currList || currList.length===0) return "<p>无数据</p>";
+            let html = `
+                <table>
+                    <tr>
+                        <th>产品分类</th>
+                        <th>吨均收入</th>
+                        <th>吨均毛利</th>
+                        <th>吨均工厂费用</th>
+                        <th>吨均营销费用</th>
+                        <th>吨均税前利润</th>
+                    </tr>
+            `;
+            currList.forEach(r=>{
+                const cat = r["分类"];
+                const isTotal = cat === "合计";
+                const cls = isTotal ? "total-row" : "";
+                html += `
+                    <tr class="${cls}">
+                        <td>${cat}</td>
+                        <td>${r["吨均收入"]}</td>
+                        <td>${r["吨均毛利"]}</td>
+                        <td>${r["吨均工厂费用"]}</td>
+                        <td>${r["吨均营销费用"]}</td>
+                        <td>${r["吨均税前利润"]}</td>
+                    </tr>
+                `
+            })
+            html += "</table>";
+            return html;
+        }
+    </script>
+</body>
+</html>

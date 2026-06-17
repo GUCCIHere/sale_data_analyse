@@ -1,2 +1,0 @@
-# 创建 runtime.txt，指定 Python 版本
-echo "python-3.11" > runtime.txt
